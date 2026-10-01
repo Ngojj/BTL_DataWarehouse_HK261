@@ -1,0 +1,12 @@
+﻿STT,Dimension,Source_Table,PK_Key,Natural_Key,Attributes,Mapping_Relationship
+1,Dim_Date,Generated,date_key,full_date,"full_date, day, month, month_name, quarter, year, week, day_of_week, day_name, is_weekend",Tự sinh từ các trường ngày trong hệ thống
+2,Dim_Patient,patient,patient_key,patient_id,"patient_id, gender, date_of_birth, blood_group, city, contact_number",patient_id → patient_id
+3,Dim_Disease,disease,disease_key,disease_id,"disease_id, disease_name, disease_category",disease_id → disease_id
+4,Dim_Department,department,department_key,department_id,"department_id, department_name, department_type, floor_number, status",department_id → department_id
+5,Dim_Ward,ward + department,ward_key,ward_id,"ward_id, ward_name, ward_type, total_beds, department_id",ward.department_id → department.department_id → department_key
+6,Dim_Bed,bed + ward,bed_key,bed_id,"bed_id, bed_number, bed_status, ward_id",bed.ward_id → ward.ward_id → ward_key
+7,Dim_Doctor,doctor + employee,doctor_key,doctor_id,"doctor_id, employee_id, doctor_name, gender, role, specialization, qualification, experience_years",doctor.employee_id → employee.employee_id
+8,Dim_Employee,employee + department,employee_key,employee_id,"employee_id, employee_name, gender, role, employment_type, date_of_joining, department_id",employee.department_id → department.department_id → department_key
+9,Dim_Drug,drug + drug_manufacturer,drug_key,drug_id,"drug_id, drug_name, brand_name, drug_category, unit_cost, manufacturer_id, manufacturer_name, country, reliability_rating, contract_status",drug.manufacturer_id → drug_manufacturer.manufacturer_id
+10,Dim_Insurance,patient_insurance + insurance_provider,insurance_key,patient_insurance_id,"patient_insurance_id, policy_number, patient_id, insurance_provider_id, provider_name, provider_type, coverage_percentage, policy_start_date, policy_end_date, coverage_limit",patient_insurance.insurance_provider_id → insurance_provider.insurance_provider_id
+11,Dim_Diagnostic_Test,diagnostic_test + department,test_key,test_id,"test_id, test_name, test_category, standard_cost, department_id",diagnostic_test.department_id → department.department_id → department_key
