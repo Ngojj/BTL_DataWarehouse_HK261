@@ -8,6 +8,7 @@ import csv
 import os
 import re
 import sys
+import time
 from datetime import date
 from pathlib import Path
 
@@ -155,12 +156,17 @@ def validate_inputs() -> dict[str, tuple[list[str], list[dict[str, str]]]]:
     return data
 
 
-def load_to_postgres(data: dict[str, tuple[list[str], list[dict[str, str]]]], dsn: str) -> None:
+def load_to_postgres(
+    data: dict[str, tuple[list[str], list[dict[str, str]]]],
+    dsn: str,
+    timings_csv: Path | None = None,
+) -> None:
     try:
         import psycopg
     except ImportError as exc:
         raise RuntimeError("Install the PostgreSQL driver with: pip install -r requirements.txt") from exc
 
+    run_started = time.perf_counter()
     with psycopg.connect(dsn) as connection:
         with connection.cursor() as cursor:
             for table, (columns, _) in data.items():
@@ -179,10 +185,15 @@ def load_to_postgres(data: dict[str, tuple[list[str], list[dict[str, str]]]], ds
                 for statement in FACT_SQL.read_text(encoding="utf-8").split(";")
                 if statement.strip()
             ]
+            timings: list[tuple[int, str, float]] = []
             for index, statement in enumerate(statements, start=1):
                 label = next((line.strip() for line in statement.splitlines() if line.strip()), "SQL")
                 print(f"Running SQL {index}/{len(statements)}: {label[:100]}", flush=True)
+                statement_started = time.perf_counter()
                 cursor.execute(statement)
+                elapsed = time.perf_counter() - statement_started
+                timings.append((index, label, elapsed))
+                print(f"  completed in {elapsed:.3f} seconds", flush=True)
 
             fact_tables = (
                 "fact_admission", "fact_bed_occupancy", "fact_billing", "fact_billing_detail",
@@ -192,8 +203,17 @@ def load_to_postgres(data: dict[str, tuple[list[str], list[dict[str, str]]]], ds
             for table in fact_tables:
                 cursor.execute(f"SELECT COUNT(*) FROM dw.{table}")
                 counts[table] = cursor.fetchone()[0]
+    load_elapsed = time.perf_counter() - run_started
+    if timings_csv is not None:
+        try:
+            with timings_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(("sql_number", "statement", "elapsed_seconds"))
+                writer.writerows((index, label, f"{elapsed:.6f}") for index, label, elapsed in timings)
+        except OSError as exc:
+            print(f"Warning: load committed, but could not write timing CSV: {exc}", file=sys.stderr)
 
-    print("Load committed successfully:")
+    print(f"Load committed successfully in {load_elapsed:.3f} seconds:")
     for table, count in counts.items():
         print(f"  {table}: {count:,} rows")
 
@@ -202,6 +222,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--validate-only", action="store_true", help="Check CSV schema, PKs, FKs, and dates; do not connect to PostgreSQL")
     parser.add_argument("--dsn", default=os.getenv("DW_DSN"), help="PostgreSQL DSN (or set DW_DSN)")
+    parser.add_argument("--timings-csv", type=Path, help="Write per-statement SQL timings to this CSV path")
     args = parser.parse_args()
 
     try:
@@ -213,7 +234,7 @@ def main() -> int:
             return 0
         if not args.dsn:
             raise ValueError("Provide --dsn or set the DW_DSN environment variable")
-        load_to_postgres(data, args.dsn)
+        load_to_postgres(data, args.dsn, args.timings_csv)
     except (OSError, ValueError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         return 1

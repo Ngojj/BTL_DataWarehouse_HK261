@@ -40,3 +40,9 @@ Tỷ lệ lấp đầy giường được tính theo snapshot hàng ngày: một
 ## Kiểm tra xác thực
 
 `--validate-only` kiểm tra xem tất cả 19 file CSV đã xử lý có tồn tại, các cột bắt buộc có mặt, khóa chính là duy nhất và không rỗng, các tham chiếu foreign-key không bị orphaned, và ngày nhập viện, hóa đơn, và chẩn đoán là định dạng ISO hợp lệ. Một lần kiểm tra thành công không cần thông tin xác thực PostgreSQL.
+
+## Milestone 3: benchmark và DSS
+
+Loader in thời gian từng câu SQL và tổng thời gian kết thúc nạp. Dùng `python scripts/load_facts.py --timings-csv benchmark_tv3.csv` để lưu số đo vào CSV. `fact_bed_occupancy` bung admission thành các ngày giường bận rồi loại cặp giường/ngày trùng lặp trước khi ghép với toàn bộ ngày giường; các index phục vụ tra occupancy theo ngày/khu, admission theo khu/ngày và assignment theo khu.
+
+Chạy DSS bằng `python -m src.dss` sau khi đặt `DW_DSN` và nạp DW. Quy tắc cảnh báo, cách tính khu cần chú ý, cách chạy trên Windows/Linux và các giới hạn dữ liệu được mô tả trong [TV3 DSS và benchmark](TV3_dss_benchmark.md). Hướng dẫn chạy toàn bộ quy trình nằm ở [Hướng dẫn chạy TV3](huong_dan_chay_tv3.md).
