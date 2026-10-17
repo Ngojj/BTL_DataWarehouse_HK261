@@ -205,8 +205,15 @@ CREATE TABLE IF NOT EXISTS dw.dim_diagnostic_test (
 -- ============================================================
 -- Optional indexes for common Natural Key lookups
 -- UNIQUE constraints above already create indexes in PostgreSQL.
--- Additional indexes are not required at this stage.
 -- ============================================================
+
+-- Required for facts.sql's fact_billing / fact_billing_detail load: a LATERAL
+-- subquery resolves the insurance policy in effect on the bill date per
+-- patient_id. Without this index that join falls back to a sequential scan
+-- of dim_insurance per billing row (measured ~228s/225s on ~45k/112k rows in
+-- benchmark_tv3.csv; ~3.5min full load with it vs 40-60min+ without).
+CREATE INDEX IF NOT EXISTS ix_dim_insurance_patient
+    ON dw.dim_insurance(patient_id, policy_start_date DESC);
 
 -- ============================================================
 -- Verification
