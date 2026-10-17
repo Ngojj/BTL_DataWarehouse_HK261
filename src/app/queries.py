@@ -196,6 +196,46 @@ def billing_by_department(_engine, start: date, end: date) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
+def billing_detail_composition(_engine, start: date, end: date) -> pd.DataFrame:
+    """Descriptive mix by charge_type. Does NOT reconcile to fact_billing.total_amount
+    (see billing_reconciliation) — use only to show relative composition, never absolute totals."""
+    sql = text("""
+        SELECT bd.charge_type,
+               SUM(bd.amount) AS total_amount,
+               COUNT(*) AS line_count
+          FROM dw.fact_billing_detail bd
+          JOIN dw.dim_date d ON d.date_key = bd.billing_date_key
+         WHERE d.full_date BETWEEN :start AND :end
+         GROUP BY bd.charge_type
+         ORDER BY total_amount DESC
+    """)
+    return pd.read_sql_query(sql, _engine, params={"start": start, "end": end})
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def billing_reconciliation(_engine) -> dict[str, Any]:
+    """Live evidence for the billing vs. billing_detail mismatch, computed from the
+    currently loaded DW (not a hardcoded figure from a one-off analysis)."""
+    sql = text("""
+        WITH detail_sums AS (
+            SELECT bill_id, SUM(amount) AS sum_detail
+            FROM dw.fact_billing_detail
+            GROUP BY bill_id
+        )
+        SELECT
+            COUNT(*) AS total_bills,
+            COUNT(*) FILTER (
+                WHERE ABS(COALESCE(ds.sum_detail, 0) - b.total_amount) > 0.01
+            ) AS mismatched_bills,
+            CORR(b.total_amount, COALESCE(ds.sum_detail, 0)) AS correlation
+        FROM dw.fact_billing b
+        LEFT JOIN detail_sums ds ON ds.bill_id = b.bill_id
+    """)
+    df = pd.read_sql_query(sql, _engine)
+    return df.iloc[0].to_dict()
+
+
+@st.cache_data(ttl=300, show_spinner=False)
 def drug_usage(_engine, start: date, end: date, top_n: int = 15) -> pd.DataFrame:
     """Prescriptions per drug, dated via the parent admission (fact_prescription has no date FK)."""
     sql = text("""
