@@ -105,6 +105,12 @@ CREATE INDEX IF NOT EXISTS ix_fact_admission_department ON dw.fact_admission(dep
 CREATE INDEX IF NOT EXISTS ix_fact_billing_date ON dw.fact_billing(billing_date_key);
 CREATE INDEX IF NOT EXISTS ix_fact_billing_detail_date ON dw.fact_billing_detail(billing_date_key);
 CREATE INDEX IF NOT EXISTS ix_fact_diagnostic_date ON dw.fact_diagnostic(diagnostic_date_key);
+CREATE INDEX IF NOT EXISTS ix_fact_bed_occupancy_date_ward
+    ON dw.fact_bed_occupancy(date_key, ward_key);
+CREATE INDEX IF NOT EXISTS ix_fact_admission_ward_date
+    ON dw.fact_admission(ward_key, admission_date_key);
+CREATE INDEX IF NOT EXISTS ix_fact_staff_assignment_ward
+    ON dw.fact_staff_assignment(ward_key);
 
 -- Load or refresh shared dimensions from the cleaned source files.
 INSERT INTO dw.dim_patient (patient_id, gender, date_of_birth, blood_group, city, contact_number)

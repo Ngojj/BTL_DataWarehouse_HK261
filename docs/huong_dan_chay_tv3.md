@@ -111,9 +111,25 @@ Nếu cần, dùng python3 scripts/load_facts.py trên Linux hoặc dùng Python
 
 Loader nạp CSV vào các bảng staging tạm, cập nhật dimension, rồi nạp bảy fact trong một transaction. Terminal in `Running SQL ...` để báo tiến độ. Lần chạy thành công sẽ kết thúc bằng `Load committed successfully` và số dòng của từng fact.
 
+Để lưu thời gian của từng câu SQL và tổng thời gian nạp vào kết quả benchmark:
+
+```bash
+python scripts/load_facts.py --timings-csv benchmark_tv3.csv
+```
+
+## 7. Chạy DSS cơ bản của TV3
+
+Sau khi DW đã được nạp thành công và `DW_DSN` vẫn được đặt trong terminal hiện tại:
+
+```bash
+python -m src.dss
+```
+
+Lệnh in báo cáo JSON gồm phân loại occupancy theo ngưỡng M1, thuốc dưới reorder level và xếp hạng khu vực cần chú ý. Mặc định admissions/LOS dùng 30 ngày kết thúc tại ngày occupancy mới nhất trong DW; có thể đổi cửa sổ bằng `--lookback-days 60`. Tồn kho đọc từ `data/processed/drug_inventory.csv`; có thể chỉ định file khác bằng `--inventory-csv`. Trên Linux dùng `python3` nếu cần.
+
 Không chạy riêng `sql/healthcare_dw_facts.sql` bằng pgAdmin/`psql`: file này cần các bảng `stg_*` do loader tạo ra.
 
-## 7. Kiểm tra kết quả trong pgAdmin
+## 8. Kiểm tra kết quả trong pgAdmin
 
 Mở Query Tool của database `healthcare_dw`, chạy:
 
