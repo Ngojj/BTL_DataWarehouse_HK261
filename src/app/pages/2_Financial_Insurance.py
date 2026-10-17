@@ -51,7 +51,7 @@ with col_a:
     else:
         fig = px.line(trend, x="month_start", y="total_billing", markers=True)
         fig.update_layout(xaxis_title="Tháng", yaxis_title="Tổng chi phí")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
 with col_b:
     st.subheader("Bảo hiểm vs. bệnh nhân tự trả")
@@ -60,7 +60,7 @@ with col_b:
         "Số tiền": [summary["total_insurance_covered"], summary["total_patient_payable"]],
     }
     fig_pie = px.pie(pie_df, names="Nguồn chi trả", values="Số tiền")
-    st.plotly_chart(fig_pie, use_container_width=True)
+    st.plotly_chart(fig_pie, width="stretch")
 
 st.subheader("Chi phí theo khoa")
 by_dept = queries.billing_by_department(engine, start_date, end_date)
@@ -69,5 +69,5 @@ if by_dept.empty:
 else:
     fig_dept = px.bar(by_dept, x="department_name", y="total_billing")
     fig_dept.update_layout(xaxis_title="Khoa", yaxis_title="Tổng chi phí")
-    st.plotly_chart(fig_dept, use_container_width=True)
-    st.dataframe(by_dept, use_container_width=True, hide_index=True)
+    st.plotly_chart(fig_dept, width="stretch")
+    st.dataframe(by_dept, width="stretch", hide_index=True)

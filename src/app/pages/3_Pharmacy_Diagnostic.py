@@ -37,7 +37,7 @@ with col_a:
     else:
         fig = px.bar(usage.sort_values("prescription_count"), x="prescription_count", y="drug_name", orientation="h")
         fig.update_layout(xaxis_title="Số lần kê đơn", yaxis_title="Thuốc")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
 with col_b:
     st.subheader("Thuốc tồn kho thấp (dưới mức reorder_level)")
@@ -45,7 +45,7 @@ with col_b:
     if low_stock.empty:
         st.success("Không có thuốc nào dưới ngưỡng tồn kho tối thiểu.")
     else:
-        st.dataframe(low_stock, use_container_width=True, hide_index=True)
+        st.dataframe(low_stock, width="stretch", hide_index=True)
 
 st.subheader("Thống kê hoạt động chẩn đoán")
 col_c, col_d = st.columns(2)
@@ -56,7 +56,7 @@ with col_c:
     else:
         fig_cat = px.bar(by_category, x="test_category", y="diagnostic_count")
         fig_cat.update_layout(xaxis_title="Loại xét nghiệm", yaxis_title="Số lượt")
-        st.plotly_chart(fig_cat, use_container_width=True)
+        st.plotly_chart(fig_cat, width="stretch")
 
 with col_d:
     trend = queries.diagnostic_trend(engine, start_date, end_date)
@@ -65,4 +65,4 @@ with col_d:
     else:
         fig_trend = px.line(trend, x="month_start", y="diagnostic_count", markers=True)
         fig_trend.update_layout(xaxis_title="Tháng", yaxis_title="Số lượt chẩn đoán")
-        st.plotly_chart(fig_trend, use_container_width=True)
+        st.plotly_chart(fig_trend, width="stretch")

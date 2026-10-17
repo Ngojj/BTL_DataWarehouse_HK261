@@ -56,7 +56,13 @@ def overview_kpis(_engine, start: date, end: date) -> dict[str, Any]:
               WHERE d.full_date BETWEEN :start AND :end) AS total_billing,
             (SELECT SUM(f.occupied_bed_count)::NUMERIC / NULLIF(SUM(f.capacity_bed_count), 0)
                FROM dw.fact_bed_occupancy f
-              WHERE f.date_key = (SELECT MAX(date_key) FROM dw.fact_bed_occupancy)) AS latest_occupancy_rate
+              WHERE f.date_key = (
+                  SELECT dd.date_key FROM dw.dim_date dd
+                   WHERE dd.full_date = (
+                       SELECT MAX(d.full_date) FROM dw.fact_admission a
+                       JOIN dw.dim_date d ON d.date_key = a.admission_date_key
+                   )
+              )) AS latest_occupancy_rate
     """)
     df = pd.read_sql_query(sql, _engine, params={"start": start, "end": end})
     return df.iloc[0].to_dict()
@@ -77,7 +83,13 @@ def admissions_by_month(_engine, start: date, end: date) -> pd.DataFrame:
 
 @st.cache_data(ttl=300, show_spinner=False)
 def bed_occupancy_by_ward(_engine) -> pd.DataFrame:
-    """Latest daily snapshot per ward (fact_bed_occupancy is a periodic-snapshot fact)."""
+    """Latest daily snapshot per ward (fact_bed_occupancy is a periodic-snapshot fact).
+
+    "Latest" is anchored on the last admission_date rather than MAX(date_key) in
+    dim_date: dim_date's calendar extends past the last admission because a few
+    discharge_date values trail beyond it, so the absolute last calendar day can
+    be a nearly-empty tail day (e.g. 1/415 beds) that misrepresents real occupancy.
+    """
     sql = text("""
         SELECT w.ward_name,
                SUM(f.occupied_bed_count) AS occupied_beds,
@@ -86,7 +98,13 @@ def bed_occupancy_by_ward(_engine) -> pd.DataFrame:
                SUM(f.occupied_bed_count)::NUMERIC / NULLIF(SUM(f.capacity_bed_count), 0) AS occupancy_rate
           FROM dw.fact_bed_occupancy f
           JOIN dw.dim_ward w ON w.ward_key = f.ward_key
-         WHERE f.date_key = (SELECT MAX(date_key) FROM dw.fact_bed_occupancy)
+         WHERE f.date_key = (
+             SELECT dd.date_key FROM dw.dim_date dd
+              WHERE dd.full_date = (
+                  SELECT MAX(d.full_date) FROM dw.fact_admission a
+                  JOIN dw.dim_date d ON d.date_key = a.admission_date_key
+              )
+         )
          GROUP BY w.ward_name
          ORDER BY occupancy_rate DESC NULLS LAST
     """)

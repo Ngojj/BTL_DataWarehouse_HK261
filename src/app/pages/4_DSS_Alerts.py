@@ -62,14 +62,14 @@ else:
         color = {"HIGH_PRESSURE": "#f8d7da", "WATCH": "#fff3cd", "NORMAL": "#d4edda"}.get(row["alert_level"], "")
         return [f"background-color: {color}"] * len(row)
 
-    st.dataframe(bed_df.style.apply(_highlight, axis=1), use_container_width=True, hide_index=True)
+    st.dataframe(bed_df.style.apply(_highlight, axis=1), width="stretch", hide_index=True)
 
 st.subheader("Cảnh báo tồn kho thuốc thấp")
 stock_df = pd.DataFrame(report["low_stock_alerts"])
 if stock_df.empty:
     st.success("Không có thuốc nào dưới ngưỡng tồn kho tối thiểu.")
 else:
-    st.dataframe(stock_df, use_container_width=True, hide_index=True)
+    st.dataframe(stock_df, width="stretch", hide_index=True)
 
 st.subheader("Khu vực cần chú ý")
 st.caption(report["notes"]["area_attention_rule"])
@@ -81,7 +81,7 @@ else:
     st.dataframe(
         area_df[["ward_name", "occupancy_rate", "admissions_in_window", "avg_length_of_stay_days",
                  "staff_assignments", "attention_score", "reasons"]],
-        use_container_width=True, hide_index=True,
+        width="stretch", hide_index=True,
     )
     if len(flagged):
         st.warning("Khu vực được gắn cờ: " + ", ".join(flagged["ward_name"]))

@@ -50,7 +50,7 @@ if trend.empty:
 else:
     fig = px.line(trend, x="month_start", y="admissions", markers=True)
     fig.update_layout(xaxis_title="Tháng", yaxis_title="Số lượt nhập viện")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 st.caption(
     "Dữ liệu đọc trực tiếp từ schema `dw` trên PostgreSQL. "

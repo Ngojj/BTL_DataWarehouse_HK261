@@ -51,7 +51,7 @@ else:
         color_continuous_scale=["#2ecc71", "#f1c40f", "#e74c3c"], range_color=[0, 1],
     )
     fig.update_layout(xaxis_title="Khu", yaxis_title="Tỷ lệ lấp đầy", yaxis_tickformat=".0%")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 st.subheader("Xu hướng tỷ lệ lấp đầy giường theo tháng")
 trend = queries.occupancy_trend(engine, start_date, end_date)
@@ -60,7 +60,7 @@ if trend.empty:
 else:
     fig2 = px.line(trend, x="month_start", y="occupancy_rate", markers=True)
     fig2.update_layout(yaxis_tickformat=".0%", xaxis_title="Tháng", yaxis_title="Tỷ lệ lấp đầy")
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width="stretch")
 
 st.subheader("Lượt nhập viện & LOS trung bình theo khoa")
 dept_df = queries.admissions_by_department(engine, start_date, end_date)
@@ -69,5 +69,5 @@ if dept_df.empty:
 else:
     fig3 = px.bar(dept_df, x="department_name", y="admissions")
     fig3.update_layout(xaxis_title="Khoa", yaxis_title="Số lượt nhập viện")
-    st.plotly_chart(fig3, use_container_width=True)
-    st.dataframe(dept_df, use_container_width=True, hide_index=True)
+    st.plotly_chart(fig3, width="stretch")
+    st.dataframe(dept_df, width="stretch", hide_index=True)
