@@ -1,0 +1,36 @@
+sql_number,statement,elapsed_seconds
+1,-- ============================================================,0.000068
+2,CREATE TABLE IF NOT EXISTS dw.fact_admission (,0.000101
+3,CREATE TABLE IF NOT EXISTS dw.fact_bed_occupancy (,0.000139
+4,CREATE TABLE IF NOT EXISTS dw.fact_billing (,0.000158
+5,CREATE TABLE IF NOT EXISTS dw.fact_billing_detail (,0.000170
+6,CREATE TABLE IF NOT EXISTS dw.fact_diagnostic (,0.000045
+7,CREATE TABLE IF NOT EXISTS dw.fact_prescription (,0.000041
+8,CREATE TABLE IF NOT EXISTS dw.fact_staff_assignment (,0.000038
+9,CREATE INDEX IF NOT EXISTS ix_fact_admission_date ON dw.fact_admission(admission_date_key),0.000405
+10,CREATE INDEX IF NOT EXISTS ix_fact_admission_department ON dw.fact_admission(department_key),0.000062
+11,CREATE INDEX IF NOT EXISTS ix_fact_billing_date ON dw.fact_billing(billing_date_key),0.000087
+12,CREATE INDEX IF NOT EXISTS ix_fact_billing_detail_date ON dw.fact_billing_detail(billing_date_key),0.000177
+13,CREATE INDEX IF NOT EXISTS ix_fact_diagnostic_date ON dw.fact_diagnostic(diagnostic_date_key),0.000051
+14,CREATE INDEX IF NOT EXISTS ix_fact_bed_occupancy_date_ward,0.000061
+15,CREATE INDEX IF NOT EXISTS ix_fact_admission_ward_date,0.000044
+16,CREATE INDEX IF NOT EXISTS ix_fact_staff_assignment_ward,0.000064
+17,-- Load or refresh shared dimensions from the cleaned source files.,0.166827
+18,"INSERT INTO dw.dim_disease (disease_id, disease_name, disease_category)",0.001111
+19,"INSERT INTO dw.dim_department (department_id, department_name, department_type, floor_number, status)",0.000636
+20,"INSERT INTO dw.dim_ward (ward_id, ward_name, ward_type, total_beds, department_id)",0.000449
+21,"INSERT INTO dw.dim_bed (bed_id, bed_number, bed_status, ward_id)",0.003365
+22,"INSERT INTO dw.dim_doctor (doctor_id, employee_id, doctor_name, gender, role,",0.001576
+23,"INSERT INTO dw.dim_employee (employee_id, employee_name, gender, role, employment_type,",0.003893
+24,"INSERT INTO dw.dim_drug (drug_id, drug_name, brand_name, drug_category, unit_cost,",0.002847
+25,"INSERT INTO dw.dim_insurance (patient_insurance_id, policy_number, patient_id,",0.163247
+26,"INSERT INTO dw.dim_diagnostic_test (test_id, test_name, test_category, standard_cost, department_id)",0.000882
+27,-- The date dimension is daily so bed occupancy includes beds with zero occupancy.,0.045037
+28,INSERT INTO dw.fact_admission,0.687705
+29,-- Occupancy is a daily snapshot. Expand stays into occupied bed-days first,0.000216
+30,-- DISTINCT prevents overlapping admissions from counting a bed twice per day.,13.436014
+31,WITH billing_context AS (,228.097904
+32,WITH billing_context AS (,225.185118
+33,INSERT INTO dw.fact_diagnostic,0.688684
+34,INSERT INTO dw.fact_prescription,0.508909
+35,INSERT INTO dw.fact_staff_assignment,0.003984
