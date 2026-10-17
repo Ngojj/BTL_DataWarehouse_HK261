@@ -23,20 +23,24 @@ streamlit run src/app/app.py
 
 ## Các trang
 
+`app.py` chỉ là router (`st.navigation`), không tự vẽ nội dung — toàn bộ giao diện nằm trong `app_pages/`.
+
 | Trang | Nội dung |
 | --- | --- |
-| `app.py` (Hospital Overview) | Tổng lượt nhập viện, tổng bệnh nhân, LOS trung bình, tổng chi phí, công suất giường mới nhất, xu hướng nhập viện theo tháng |
-| `pages/1_Hospital_Capacity.py` | Tỷ lệ lấp đầy giường theo khu, cảnh báo khu vực áp lực cao, xu hướng công suất theo tháng, nhập viện/LOS theo khoa |
-| `pages/2_Financial_Insurance.py` | Tổng chi phí, bảo hiểm chi trả vs. bệnh nhân tự trả, xu hướng theo thời gian, chi phí theo khoa |
-| `pages/3_Pharmacy_Diagnostic.py` | Top thuốc được kê nhiều nhất, thuốc tồn kho thấp, thống kê chẩn đoán |
-| `pages/4_DSS_Alerts.py` | Cảnh báo công suất giường, tồn kho thấp, khu vực cần chú ý — dùng lại `src/dss` (TV3, nhánh `TV3`, chưa merge vào `main`). Trang này tự ẩn nếu `src/dss` chưa có trên nhánh hiện tại. |
+| `app_pages/overview.py` (Hospital overview) | Tổng lượt nhập viện, tổng bệnh nhân, LOS trung bình, tổng chi phí, công suất giường mới nhất, xu hướng nhập viện theo tháng |
+| `app_pages/hospital_capacity.py` | Tỷ lệ lấp đầy giường theo khu, cảnh báo khu vực áp lực cao, xu hướng công suất theo tháng, nhập viện/LOS theo khoa |
+| `app_pages/financial_insurance.py` | Tổng chi phí, bảo hiểm chi trả vs. bệnh nhân tự trả, xu hướng theo thời gian, chi phí theo khoa, cơ cấu theo loại khoản mục |
+| `app_pages/pharmacy_diagnostic.py` | Top thuốc được kê nhiều nhất, thuốc tồn kho thấp, thống kê chẩn đoán |
+| `app_pages/dss_alerts.py` | Cảnh báo công suất giường, tồn kho thấp, khu vực cần chú ý — dùng lại `src/dss` (TV3, nhánh `TV3`, chưa merge vào `main`). Trang này tự ẩn nếu `src/dss` chưa có trên nhánh hiện tại. |
 
 ## Cấu trúc code
 
+- `app.py` — entry point: `st.set_page_config` + `st.navigation` (router, icon cho từng trang trong sidebar).
 - `db.py` — tạo SQLAlchemy engine từ biến môi trường `DW_DSN` (cache bằng `st.cache_resource`).
 - `queries.py` — toàn bộ câu SQL, mỗi hàm trả về `pandas.DataFrame`/dict, cache bằng `st.cache_data`.
 - `filters.py` — widget sidebar dùng chung (khoảng thời gian, khoa).
-- `pages/` — các trang phụ theo convention multipage app của Streamlit.
+- `app_pages/` — nội dung từng trang (không dùng tên `pages/` để tránh Streamlit tự động phát hiện multipage kiểu cũ, chồng lên `st.navigation`).
+- `../../.streamlit/config.toml` — theme (dense-dashboard, dual light/dark, màu xanh `#1D4ED8`/`#2563EB`).
 
 ## Lưu ý
 
