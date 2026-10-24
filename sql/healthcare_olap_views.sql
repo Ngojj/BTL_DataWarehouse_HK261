@@ -177,7 +177,7 @@ GROUP BY dr.drug_id, dr.drug_name, dr.drug_category;
 -- =====================================================
 CREATE OR REPLACE VIEW dw.vw_diagnostic_count AS
 SELECT
-    d.year,
+    EXTRACT(YEAR FROM d.full_date)::INT AS year,
     d.month,
     t.test_name,
     t.test_category,
@@ -191,5 +191,5 @@ JOIN dw.dim_diagnostic_test t
 LEFT JOIN dw.dim_department dep
     ON dep.department_key = f.department_key
 GROUP BY
-    d.year, d.month, t.test_name, t.test_category,
+    EXTRACT(YEAR FROM d.full_date), d.month, t.test_name, t.test_category,
     dep.department_name;
