@@ -135,13 +135,33 @@ ON CONFLICT (department_id) DO UPDATE SET
     floor_number = EXCLUDED.floor_number, status = EXCLUDED.status;
 
 -- SCD Type 2 on total_beds (see dim_ward comment in dimensions.sql), done
--- as two separate statements rather than one UPDATE+INSERT WITH chain: Postgres
+-- as separate statements rather than one UPDATE+INSERT WITH chain: Postgres
 -- does not guarantee a data-modifying CTE finishes before a sibling one starts
 -- unless there is a RETURNING-based dependency between them, so an INSERT that
 -- is only "logically after" an UPDATE in the same statement can still race it
 -- and violate the current-row unique index below.
 --
--- Statement 1: close out current rows whose total_beds changed.
+-- Statement 1: same-day correction. valid_from/valid_to are DATE, not
+-- TIMESTAMP, so if the loader already opened today's version earlier today
+-- and total_beds changed again before midnight, there's no later date left
+-- to open a second version with -- closing "today's" row with
+-- valid_to = yesterday would produce valid_to < valid_from, an invalid
+-- range. Update that row's value in place instead of versioning it again;
+-- this is a correction to today's entry, not a new day-grain change.
+WITH incoming_ward AS (
+    SELECT ward_id::INT AS ward_id, NULLIF(total_beds, '')::INT AS total_beds
+    FROM stg_ward
+)
+UPDATE dw.dim_ward cur
+   SET total_beds = i.total_beds
+  FROM incoming_ward i
+ WHERE cur.ward_id = i.ward_id
+   AND cur.is_current
+   AND cur.valid_from = CURRENT_DATE
+   AND cur.total_beds IS DISTINCT FROM i.total_beds;
+
+-- Statement 2: a real change from an earlier day -- close out that current
+-- row so statement 3 can open a new one dated today.
 WITH incoming_ward AS (
     SELECT ward_id::INT AS ward_id, NULLIF(total_beds, '')::INT AS total_beds
     FROM stg_ward
@@ -151,9 +171,10 @@ UPDATE dw.dim_ward cur
   FROM incoming_ward i
  WHERE cur.ward_id = i.ward_id
    AND cur.is_current
+   AND cur.valid_from < CURRENT_DATE
    AND cur.total_beds IS DISTINCT FROM i.total_beds;
 
--- Statement 2: insert a current version for any ward_id that doesn't have
+-- Statement 3: insert a current version for any ward_id that doesn't have
 -- one right now -- covers both a brand new ward_id and one just closed above
 -- in a single condition. First-ever row for a ward_id is seeded as valid
 -- "since the beginning of time" (not CURRENT_DATE): the source is a single
@@ -213,10 +234,25 @@ ON CONFLICT (employee_id) DO UPDATE SET
     date_of_joining = EXCLUDED.date_of_joining, department_id = EXCLUDED.department_id;
 
 -- SCD Type 2 on unit_cost (see dim_drug comment in dimensions.sql), same
--- two-statement close-then-insert pattern as dim_ward above (and the same
--- reason: a single UPDATE+INSERT WITH chain can race the unique index).
+-- statement pattern as dim_ward above (same two reasons: a single
+-- UPDATE+INSERT WITH chain can race the unique index, and a same-day
+-- re-change can't open a second DATE-grain version without an invalid
+-- valid_to < valid_from range).
 --
--- Statement 1: close out current rows whose unit_cost changed.
+-- Statement 1: same-day correction -- update today's row in place.
+WITH incoming_drug AS (
+    SELECT drug_id::INT AS drug_id, NULLIF(unit_cost, '')::NUMERIC(15,2) AS unit_cost
+    FROM stg_drug
+)
+UPDATE dw.dim_drug cur
+   SET unit_cost = i.unit_cost
+  FROM incoming_drug i
+ WHERE cur.drug_id = i.drug_id
+   AND cur.is_current
+   AND cur.valid_from = CURRENT_DATE
+   AND cur.unit_cost IS DISTINCT FROM i.unit_cost;
+
+-- Statement 2: a real change from an earlier day -- close out that row.
 WITH incoming_drug AS (
     SELECT drug_id::INT AS drug_id, NULLIF(unit_cost, '')::NUMERIC(15,2) AS unit_cost
     FROM stg_drug
@@ -226,10 +262,11 @@ UPDATE dw.dim_drug cur
   FROM incoming_drug i
  WHERE cur.drug_id = i.drug_id
    AND cur.is_current
+   AND cur.valid_from < CURRENT_DATE
    AND cur.unit_cost IS DISTINCT FROM i.unit_cost;
 
--- Statement 2: insert a current version for any drug_id that doesn't have
--- one right now. See the matching comment on dim_ward's statement 2 above
+-- Statement 3: insert a current version for any drug_id that doesn't have
+-- one right now. See the matching comment on dim_ward's statement 3 above
 -- for why first-ever rows are seeded at 1900-01-01 instead of CURRENT_DATE.
 WITH incoming_drug AS (
     SELECT d.drug_id::INT AS drug_id, d.drug_name, d.brand_name, d.drug_category,

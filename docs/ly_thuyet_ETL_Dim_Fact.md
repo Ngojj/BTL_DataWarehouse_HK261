@@ -123,6 +123,15 @@ phải change-log — không biết giá đó có hiệu lực từ ngày nào t
 sát được (2020–2025); chỉ khi phát hiện thay đổi thật ở lần nạp sau mới dùng ngày nạp làm `valid_from` của
 phiên bản mới.
 
+**Edge case đã xử lý — đổi giá trị 2 lần trong cùng 1 ngày:** `valid_from`/`valid_to` là `DATE` (không phải
+`TIMESTAMP`), nên nếu loader chạy 2 lần trong cùng 1 ngày và cả 2 lần đều phát hiện thay đổi, lần nạp thứ 2
+không còn "ngày sau" nào để mở phiên bản thứ 3 — đóng dòng của hôm nay bằng `valid_to = hôm qua` sẽ tạo khoảng
+vô lý (`valid_to < valid_from`). ETL xử lý bằng cách tách 2 trường hợp: nếu dòng hiện tại đã `valid_from =
+hôm nay` (đã versioned trong ngày) thì **cập nhật tại chỗ** (coi là sửa lại giá trị của hôm nay, không tạo
+version mới); chỉ khi dòng hiện tại có `valid_from` từ ngày trước đó mới thật sự đóng + mở version mới. Đã
+verify bằng test mô phỏng đổi giá 2 lần cùng ngày — kết quả đúng 1 version mới (không phải 2), 0 khoảng ngày
+không hợp lệ.
+
 **Giới hạn đã biết:** `Fact_Staff_Assignment` không có cột ngày (hạn chế đã ghi nhận từ trước), nên không join
 theo thời gian được như trên — phải fallback về `is_current = true`.
 
