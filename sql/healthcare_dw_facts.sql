@@ -134,13 +134,54 @@ ON CONFLICT (department_id) DO UPDATE SET
     department_name = EXCLUDED.department_name, department_type = EXCLUDED.department_type,
     floor_number = EXCLUDED.floor_number, status = EXCLUDED.status;
 
-INSERT INTO dw.dim_ward (ward_id, ward_name, ward_type, total_beds, department_id)
-SELECT ward_id::INT, ward_name, ward_type, NULLIF(total_beds, '')::INT,
-       NULLIF(department_id, '')::INT
-FROM stg_ward
-ON CONFLICT (ward_id) DO UPDATE SET
-    ward_name = EXCLUDED.ward_name, ward_type = EXCLUDED.ward_type,
-    total_beds = EXCLUDED.total_beds, department_id = EXCLUDED.department_id;
+-- SCD Type 2 on total_beds (see dim_ward comment in dimensions.sql), done
+-- as two separate statements rather than one UPDATE+INSERT WITH chain: Postgres
+-- does not guarantee a data-modifying CTE finishes before a sibling one starts
+-- unless there is a RETURNING-based dependency between them, so an INSERT that
+-- is only "logically after" an UPDATE in the same statement can still race it
+-- and violate the current-row unique index below.
+--
+-- Statement 1: close out current rows whose total_beds changed.
+WITH incoming_ward AS (
+    SELECT ward_id::INT AS ward_id, NULLIF(total_beds, '')::INT AS total_beds
+    FROM stg_ward
+)
+UPDATE dw.dim_ward cur
+   SET valid_to = CURRENT_DATE - 1, is_current = FALSE
+  FROM incoming_ward i
+ WHERE cur.ward_id = i.ward_id
+   AND cur.is_current
+   AND cur.total_beds IS DISTINCT FROM i.total_beds;
+
+-- Statement 2: insert a current version for any ward_id that doesn't have
+-- one right now -- covers both a brand new ward_id and one just closed above
+-- in a single condition. First-ever row for a ward_id is seeded as valid
+-- "since the beginning of time" (not CURRENT_DATE): the source is a single
+-- historical snapshot, not a change log, so we don't know when total_beds
+-- actually took its current value, and seeding with today's date would make
+-- every historical fact (data spans 2020-2025) fail to find a valid
+-- dimension row on the date-ranged join below. A version created because a
+-- real change was detected and closed above IS dated CURRENT_DATE, since
+-- that's the one date we do know.
+WITH incoming_ward AS (
+    SELECT ward_id::INT AS ward_id, ward_name, ward_type,
+           NULLIF(total_beds, '')::INT AS total_beds,
+           NULLIF(department_id, '')::INT AS department_id
+    FROM stg_ward
+),
+missing_current AS (
+    SELECT i.*,
+           CASE WHEN EXISTS (SELECT 1 FROM dw.dim_ward h WHERE h.ward_id = i.ward_id)
+                THEN CURRENT_DATE ELSE DATE '1900-01-01' END AS version_valid_from
+    FROM incoming_ward i
+    WHERE NOT EXISTS (
+        SELECT 1 FROM dw.dim_ward cur WHERE cur.ward_id = i.ward_id AND cur.is_current
+    )
+)
+INSERT INTO dw.dim_ward (ward_id, ward_name, ward_type, total_beds, department_id,
+                         valid_from, valid_to, is_current)
+SELECT ward_id, ward_name, ward_type, total_beds, department_id, version_valid_from, NULL, TRUE
+FROM missing_current;
 
 INSERT INTO dw.dim_bed (bed_id, bed_number, bed_status, ward_id)
 SELECT bed_id::INT, bed_number, bed_status, NULLIF(ward_id, '')::INT
@@ -171,21 +212,51 @@ ON CONFLICT (employee_id) DO UPDATE SET
     role = EXCLUDED.role, employment_type = EXCLUDED.employment_type,
     date_of_joining = EXCLUDED.date_of_joining, department_id = EXCLUDED.department_id;
 
+-- SCD Type 2 on unit_cost (see dim_drug comment in dimensions.sql), same
+-- two-statement close-then-insert pattern as dim_ward above (and the same
+-- reason: a single UPDATE+INSERT WITH chain can race the unique index).
+--
+-- Statement 1: close out current rows whose unit_cost changed.
+WITH incoming_drug AS (
+    SELECT drug_id::INT AS drug_id, NULLIF(unit_cost, '')::NUMERIC(15,2) AS unit_cost
+    FROM stg_drug
+)
+UPDATE dw.dim_drug cur
+   SET valid_to = CURRENT_DATE - 1, is_current = FALSE
+  FROM incoming_drug i
+ WHERE cur.drug_id = i.drug_id
+   AND cur.is_current
+   AND cur.unit_cost IS DISTINCT FROM i.unit_cost;
+
+-- Statement 2: insert a current version for any drug_id that doesn't have
+-- one right now. See the matching comment on dim_ward's statement 2 above
+-- for why first-ever rows are seeded at 1900-01-01 instead of CURRENT_DATE.
+WITH incoming_drug AS (
+    SELECT d.drug_id::INT AS drug_id, d.drug_name, d.brand_name, d.drug_category,
+           NULLIF(d.unit_cost, '')::NUMERIC(15,2) AS unit_cost,
+           m.manufacturer_id::INT AS manufacturer_id, m.manufacturer_name, m.country,
+           NULLIF(m.reliability_rating, '')::NUMERIC(3,2) AS reliability_rating,
+           m.contract_status
+    FROM stg_drug d
+    JOIN stg_drug_manufacturer m ON m.manufacturer_id::INT = d.manufacturer_id::INT
+),
+missing_current AS (
+    SELECT i.*,
+           CASE WHEN EXISTS (SELECT 1 FROM dw.dim_drug h WHERE h.drug_id = i.drug_id)
+                THEN CURRENT_DATE ELSE DATE '1900-01-01' END AS version_valid_from
+    FROM incoming_drug i
+    WHERE NOT EXISTS (
+        SELECT 1 FROM dw.dim_drug cur WHERE cur.drug_id = i.drug_id AND cur.is_current
+    )
+)
 INSERT INTO dw.dim_drug (drug_id, drug_name, brand_name, drug_category, unit_cost,
                          manufacturer_id, manufacturer_name, country,
-                         reliability_rating, contract_status)
-SELECT d.drug_id::INT, d.drug_name, d.brand_name, d.drug_category,
-       NULLIF(d.unit_cost, '')::NUMERIC(15,2), m.manufacturer_id::INT,
-       m.manufacturer_name, m.country, NULLIF(m.reliability_rating, '')::NUMERIC(3,2),
-       m.contract_status
-FROM stg_drug d
-JOIN stg_drug_manufacturer m ON m.manufacturer_id::INT = d.manufacturer_id::INT
-ON CONFLICT (drug_id) DO UPDATE SET
-    drug_name = EXCLUDED.drug_name, brand_name = EXCLUDED.brand_name,
-    drug_category = EXCLUDED.drug_category, unit_cost = EXCLUDED.unit_cost,
-    manufacturer_id = EXCLUDED.manufacturer_id, manufacturer_name = EXCLUDED.manufacturer_name,
-    country = EXCLUDED.country, reliability_rating = EXCLUDED.reliability_rating,
-    contract_status = EXCLUDED.contract_status;
+                         reliability_rating, contract_status,
+                         valid_from, valid_to, is_current)
+SELECT drug_id, drug_name, brand_name, drug_category, unit_cost,
+       manufacturer_id, manufacturer_name, country, reliability_rating, contract_status,
+       version_valid_from, NULL, TRUE
+FROM missing_current;
 
 INSERT INTO dw.dim_insurance (patient_insurance_id, policy_number, patient_id,
                               insurance_provider_id, provider_name, provider_type,
@@ -252,6 +323,8 @@ JOIN dw.dim_patient p ON p.patient_id = a.patient_id::INT
 LEFT JOIN dw.dim_disease dis ON dis.disease_id = NULLIF(a.disease_id, '')::INT
 LEFT JOIN dw.dim_department dep ON dep.department_id = NULLIF(a.department_id, '')::INT
 LEFT JOIN dw.dim_ward w ON w.ward_id = NULLIF(a.ward_id, '')::INT
+    AND w.valid_from <= a.admission_date::DATE
+    AND (w.valid_to IS NULL OR w.valid_to >= a.admission_date::DATE)
 LEFT JOIN dw.dim_bed bed ON bed.bed_id = NULLIF(a.bed_id, '')::INT
 ON CONFLICT (admission_id) DO UPDATE SET
     admission_date_key = EXCLUDED.admission_date_key, patient_key = EXCLUDED.patient_key,
@@ -295,6 +368,8 @@ FROM bed_days bd
 JOIN dw.dim_date dd ON dd.full_date = bd.full_date
 JOIN dw.dim_bed bed ON bed.bed_id = bd.bed_id
 LEFT JOIN dw.dim_ward ward ON ward.ward_id = bd.ward_id
+    AND ward.valid_from <= bd.full_date
+    AND (ward.valid_to IS NULL OR ward.valid_to >= bd.full_date)
 LEFT JOIN occupied_bed_days occupied
        ON occupied.bed_id = bd.bed_id AND occupied.full_date = bd.full_date
 ON CONFLICT (date_key, bed_key) DO UPDATE SET
@@ -397,6 +472,8 @@ FROM stg_prescription rx
 JOIN stg_admission a ON a.admission_id::INT = rx.admission_id::INT
 JOIN dw.dim_patient p ON p.patient_id = a.patient_id::INT
 JOIN dw.dim_drug drug ON drug.drug_id = rx.drug_id::INT
+    AND drug.valid_from <= a.admission_date::DATE
+    AND (drug.valid_to IS NULL OR drug.valid_to >= a.admission_date::DATE)
 LEFT JOIN dw.dim_department dep ON dep.department_id = a.department_id::INT
 LEFT JOIN dw.dim_disease dis ON dis.disease_id = NULLIF(a.disease_id, '')::INT
 ON CONFLICT (prescription_id) DO UPDATE SET
@@ -410,7 +487,10 @@ INSERT INTO dw.fact_staff_assignment
 SELECT sa.assignment_id::INT, employee.employee_key, ward.ward_key, sa.shift, 1
 FROM stg_staff_assignment sa
 JOIN dw.dim_employee employee ON employee.employee_id = sa.employee_id::INT
-JOIN dw.dim_ward ward ON ward.ward_id = sa.ward_id::INT
+-- staff_assignment has no date column (documented limitation), so it can't
+-- be matched to the ward version valid "on" an assignment date the way the
+-- other facts above are; falls back to whatever ward version is current now.
+JOIN dw.dim_ward ward ON ward.ward_id = sa.ward_id::INT AND ward.is_current
 ON CONFLICT (assignment_id) DO UPDATE SET
     employee_key = EXCLUDED.employee_key, ward_key = EXCLUDED.ward_key,
     shift = EXCLUDED.shift;

@@ -16,6 +16,19 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data" / "processed"
 FACT_SQL = ROOT / "sql" / "healthcare_dw_facts.sql"
 
+
+def split_sql_statements(sql_text: str) -> list[str]:
+    """Split a .sql file into statements on ';'.
+
+    A plain split(";") breaks when a '--' comment contains a semicolon as
+    punctuation (e.g. "...inserted; ward_name..."), since it has no idea
+    that text is a comment, not SQL. Strip '--' line comments first so only
+    semicolons in actual statement text are split on.
+    """
+    lines = (line[: line.find("--")] if "--" in line else line for line in sql_text.splitlines())
+    stripped = "\n".join(lines)
+    return [statement.strip() for statement in stripped.split(";") if statement.strip()]
+
 TABLES = (
     "admission", "bed", "billing", "billing_detail", "department", "diagnostic_test",
     "disease", "doctor", "drug", "drug_inventory", "drug_manufacturer", "employee",
@@ -180,11 +193,7 @@ def load_to_postgres(
                         while chunk := source.read(1024 * 1024):
                             copy.write(chunk)
 
-            statements = [
-                statement.strip()
-                for statement in FACT_SQL.read_text(encoding="utf-8").split(";")
-                if statement.strip()
-            ]
+            statements = split_sql_statements(FACT_SQL.read_text(encoding="utf-8"))
             timings: list[tuple[int, str, float]] = []
             for index, statement in enumerate(statements, start=1):
                 label = next((line.strip() for line in statement.splitlines() if line.strip()), "SQL")

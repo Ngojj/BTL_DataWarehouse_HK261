@@ -85,16 +85,29 @@ CREATE TABLE IF NOT EXISTS dw.dim_department (
 --
 -- department_id is retained as a source/business attribute.
 -- It is NOT a FK to another Dimension in this Star Schema.
+--
+-- SCD Type 2 on total_beds: ward capacity changes feed the bed-occupancy
+-- KPI directly, so a historical fact must join the ward version that was
+-- valid on that fact's date, not today's capacity. drug_id/ward_id is no
+-- longer unique by itself (multiple versions share it); only one row per
+-- natural key may have is_current = TRUE, enforced by the partial index
+-- below instead of a plain UNIQUE constraint.
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS dw.dim_ward (
     ward_key       BIGSERIAL PRIMARY KEY,
-    ward_id        INT NOT NULL UNIQUE,
+    ward_id        INT NOT NULL,
     ward_name      VARCHAR(255),
     ward_type      VARCHAR(100),
     total_beds     INT,
-    department_id  INT
+    department_id  INT,
+    valid_from     DATE NOT NULL DEFAULT CURRENT_DATE,
+    valid_to       DATE,
+    is_current     BOOLEAN NOT NULL DEFAULT TRUE
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_dim_ward_current
+    ON dw.dim_ward(ward_id) WHERE is_current;
 
 -- ============================================================
 -- 6. Dim_Bed
@@ -151,11 +164,16 @@ CREATE TABLE IF NOT EXISTS dw.dim_employee (
 -- 9. Dim_Drug
 -- Source: drug + drug_manufacturer
 -- Natural Key: drug_id
+--
+-- SCD Type 2 on unit_cost: drug price changes feed the pharmacy cost KPI,
+-- so a historical prescription must join the drug version (and price) that
+-- was valid on its admission date, not today's price. See Dim_Ward above
+-- for the same drug_id-not-unique / partial-index pattern.
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS dw.dim_drug (
     drug_key           BIGSERIAL PRIMARY KEY,
-    drug_id            INT NOT NULL UNIQUE,
+    drug_id            INT NOT NULL,
     drug_name          VARCHAR(255),
     brand_name         VARCHAR(255),
     drug_category      VARCHAR(100),
@@ -164,8 +182,14 @@ CREATE TABLE IF NOT EXISTS dw.dim_drug (
     manufacturer_name  VARCHAR(255),
     country            VARCHAR(100),
     reliability_rating NUMERIC(3,2),
-    contract_status    VARCHAR(50)
+    contract_status    VARCHAR(50),
+    valid_from         DATE NOT NULL DEFAULT CURRENT_DATE,
+    valid_to           DATE,
+    is_current         BOOLEAN NOT NULL DEFAULT TRUE
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_dim_drug_current
+    ON dw.dim_drug(drug_id) WHERE is_current;
 
 -- ============================================================
 -- 10. Dim_Insurance
