@@ -28,5 +28,13 @@ Hoàn chỉnh hệ thống: DW chạy thật trên Postgres, OLAP queries, Dashb
   - Cảnh báo tồn kho thuốc: `current_stock < reorder_level`.
   - Cảnh báo khu vực cần chú ý (kết hợp nhập viện + LOS + công suất + nhân sự).
 
+## Trạng thái (cập nhật 05/11)
 
+- TV1: xong (dashboard + chạy loader thật + verify).
+- TV2: xong 10 view OLAP.
+- TV3: xong DSS + benchmark.
+- **SCD Type**: do deadline gấp (10 ngày còn lại tính từ 05/11), TV1 đã tự quyết định + code luôn thay vì chờ họp:
+  Type 2 cho `Dim_Ward.total_beds` và `Dim_Drug.unit_cost` (ảnh hưởng KPI đang có), Type 1 cho các dimension còn
+  lại. Chi tiết + lý do ở `docs/ly_thuyet_ETL_Dim_Fact.md` mục 3.1. **Cả nhóm nên xem lại quyết định này** — nếu
+  không đồng ý phạm vi/lựa chọn, báo lại để điều chỉnh trước khi viết vào báo cáo.
 
