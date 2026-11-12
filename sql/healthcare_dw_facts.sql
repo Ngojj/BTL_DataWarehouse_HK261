@@ -223,15 +223,79 @@ ON CONFLICT (doctor_id) DO UPDATE SET
     specialization = EXCLUDED.specialization, qualification = EXCLUDED.qualification,
     experience_years = EXCLUDED.experience_years;
 
+-- Dim_Employee: hybrid SCD (see dim_employee comment in dimensions.sql).
+-- Statement 0: Type 1 attributes (employee_name, gender, date_of_joining)
+-- are corrections, so they are overwritten on every version of the
+-- employee, not only the current one.
+WITH incoming_employee AS (
+    SELECT employee_id::INT AS employee_id, employee_name, gender,
+           NULLIF(date_of_joining, '')::DATE AS date_of_joining
+    FROM stg_employee
+)
+UPDATE dw.dim_employee e
+   SET employee_name = i.employee_name, gender = i.gender,
+       date_of_joining = i.date_of_joining
+  FROM incoming_employee i
+ WHERE e.employee_id = i.employee_id
+   AND (e.employee_name, e.gender, e.date_of_joining)
+       IS DISTINCT FROM (i.employee_name, i.gender, i.date_of_joining);
+
+-- Statements 1-3: Type 2 on (role, employment_type, department_id), same
+-- three-statement pattern as dim_ward / dim_drug above.
+-- Statement 1: same-day correction -- update today's row in place.
+WITH incoming_employee AS (
+    SELECT employee_id::INT AS employee_id, role, employment_type,
+           NULLIF(department_id, '')::INT AS department_id
+    FROM stg_employee
+)
+UPDATE dw.dim_employee cur
+   SET role = i.role, employment_type = i.employment_type,
+       department_id = i.department_id
+  FROM incoming_employee i
+ WHERE cur.employee_id = i.employee_id
+   AND cur.is_current
+   AND cur.valid_from = CURRENT_DATE
+   AND (cur.role, cur.employment_type, cur.department_id)
+       IS DISTINCT FROM (i.role, i.employment_type, i.department_id);
+
+-- Statement 2: a real change from an earlier day -- close out that row.
+WITH incoming_employee AS (
+    SELECT employee_id::INT AS employee_id, role, employment_type,
+           NULLIF(department_id, '')::INT AS department_id
+    FROM stg_employee
+)
+UPDATE dw.dim_employee cur
+   SET valid_to = CURRENT_DATE - 1, is_current = FALSE
+  FROM incoming_employee i
+ WHERE cur.employee_id = i.employee_id
+   AND cur.is_current
+   AND cur.valid_from < CURRENT_DATE
+   AND (cur.role, cur.employment_type, cur.department_id)
+       IS DISTINCT FROM (i.role, i.employment_type, i.department_id);
+
+-- Statement 3: insert a current version for any employee_id without one.
+-- First-ever version is valid since 1900-01-01 (the source is a snapshot,
+-- not a change log); a version opened by a detected change starts today.
+WITH incoming_employee AS (
+    SELECT employee_id::INT AS employee_id, employee_name, gender, role,
+           employment_type, NULLIF(date_of_joining, '')::DATE AS date_of_joining,
+           NULLIF(department_id, '')::INT AS department_id
+    FROM stg_employee
+),
+missing_current AS (
+    SELECT i.*,
+           CASE WHEN EXISTS (SELECT 1 FROM dw.dim_employee h WHERE h.employee_id = i.employee_id)
+                THEN CURRENT_DATE ELSE DATE '1900-01-01' END AS version_valid_from
+    FROM incoming_employee i
+    WHERE NOT EXISTS (
+        SELECT 1 FROM dw.dim_employee cur WHERE cur.employee_id = i.employee_id AND cur.is_current
+    )
+)
 INSERT INTO dw.dim_employee (employee_id, employee_name, gender, role, employment_type,
-                             date_of_joining, department_id)
-SELECT employee_id::INT, employee_name, gender, role, employment_type,
-       NULLIF(date_of_joining, '')::DATE, NULLIF(department_id, '')::INT
-FROM stg_employee
-ON CONFLICT (employee_id) DO UPDATE SET
-    employee_name = EXCLUDED.employee_name, gender = EXCLUDED.gender,
-    role = EXCLUDED.role, employment_type = EXCLUDED.employment_type,
-    date_of_joining = EXCLUDED.date_of_joining, department_id = EXCLUDED.department_id;
+                             date_of_joining, department_id, valid_from, valid_to, is_current)
+SELECT employee_id, employee_name, gender, role, employment_type, date_of_joining,
+       department_id, version_valid_from, NULL, TRUE
+FROM missing_current;
 
 -- SCD Type 2 on unit_cost (see dim_drug comment in dimensions.sql), same
 -- statement pattern as dim_ward above (same two reasons: a single
@@ -523,7 +587,10 @@ INSERT INTO dw.fact_staff_assignment
     (assignment_id, employee_key, ward_key, shift, assignment_count)
 SELECT sa.assignment_id::INT, employee.employee_key, ward.ward_key, sa.shift, 1
 FROM stg_staff_assignment sa
+-- staff_assignment has no date column, so the employee version is the
+-- current one (same reason as the dim_ward join below).
 JOIN dw.dim_employee employee ON employee.employee_id = sa.employee_id::INT
+                             AND employee.is_current
 -- staff_assignment has no date column (documented limitation), so it can't
 -- be matched to the ward version valid "on" an assignment date the way the
 -- other facts above are; falls back to whatever ward version is current now.

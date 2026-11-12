@@ -147,18 +147,43 @@ CREATE TABLE IF NOT EXISTS dw.dim_doctor (
 -- 8. Dim_Employee
 -- Source: employee + department
 -- Natural Key: employee_id
+--
+-- Hybrid SCD:
+--   * Type 2 on role, employment_type, department_id: a promotion, a
+--     contract change or a transfer to another department opens a new
+--     version, so staffing analysis by role/department keeps history.
+--   * Type 1 on employee_name, gender, date_of_joining: corrections are
+--     overwritten on every version of the employee.
+-- employee_id is no longer unique by itself; only one current row per
+-- employee_id is allowed (partial unique index below), same pattern as
+-- Dim_Ward / Dim_Drug.
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS dw.dim_employee (
     employee_key     BIGSERIAL PRIMARY KEY,
-    employee_id      INT NOT NULL UNIQUE,
+    employee_id      INT NOT NULL,
     employee_name    VARCHAR(255),
     gender           VARCHAR(20),
     role             VARCHAR(100),
     employment_type  VARCHAR(100),
     date_of_joining  DATE,
-    department_id    INT
+    department_id    INT,
+    valid_from       DATE NOT NULL DEFAULT CURRENT_DATE,
+    valid_to         DATE,
+    is_current       BOOLEAN NOT NULL DEFAULT TRUE
 );
+
+-- Upgrade a dim_employee created by an earlier version of this script
+-- (Type 1 only, UNIQUE employee_id). Existing rows become the first
+-- version, valid since 1900-01-01. No-op on a freshly created table.
+ALTER TABLE dw.dim_employee ADD COLUMN IF NOT EXISTS valid_from DATE NOT NULL DEFAULT DATE '1900-01-01';
+ALTER TABLE dw.dim_employee ADD COLUMN IF NOT EXISTS valid_to DATE;
+ALTER TABLE dw.dim_employee ADD COLUMN IF NOT EXISTS is_current BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE dw.dim_employee ALTER COLUMN valid_from SET DEFAULT CURRENT_DATE;
+ALTER TABLE dw.dim_employee DROP CONSTRAINT IF EXISTS dim_employee_employee_id_key;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_dim_employee_current
+    ON dw.dim_employee(employee_id) WHERE is_current;
 
 -- ============================================================
 -- 9. Dim_Drug

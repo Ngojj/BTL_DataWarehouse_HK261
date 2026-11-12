@@ -13,9 +13,13 @@ DEFAULT_INVENTORY = ROOT / "data" / "processed" / "drug_inventory.csv"
 
 BED_ALERTS_SQL = """
 WITH latest AS (
+    -- Anchor on the last admission date, not MAX(date) in fact_bed_occupancy:
+    -- dim_date trails past the last admission (late discharge/bill dates), so
+    -- the absolute last calendar day is a near-empty tail day (1/415 beds).
+    -- Same anchor as the dashboard (src/app/queries.py).
     SELECT MAX(d.full_date) AS full_date
-    FROM dw.fact_bed_occupancy f
-    JOIN dw.dim_date d ON d.date_key = f.date_key
+    FROM dw.fact_admission a
+    JOIN dw.dim_date d ON d.date_key = a.admission_date_key
 ), ward_snapshot AS (
     SELECT w.ward_id, w.ward_name, d.full_date,
            SUM(f.occupied_bed_count)::INT AS occupied_beds,
@@ -38,33 +42,42 @@ ORDER BY occupancy_rate DESC NULLS LAST, ward_name
 
 AREA_ATTENTION_SQL = """
 WITH latest AS (
+    -- Anchor on the last admission date, not MAX(date) in fact_bed_occupancy:
+    -- dim_date trails past the last admission (late discharge/bill dates), so
+    -- the absolute last calendar day is a near-empty tail day (1/415 beds).
+    -- Same anchor as the dashboard (src/app/queries.py).
     SELECT MAX(d.full_date) AS full_date
-    FROM dw.fact_bed_occupancy f
-    JOIN dw.dim_date d ON d.date_key = f.date_key
+    FROM dw.fact_admission a
+    JOIN dw.dim_date d ON d.date_key = a.admission_date_key
 ), occupancy AS (
-    SELECT f.ward_key,
+    SELECT w.ward_id,
            SUM(f.occupied_bed_count)::INT AS occupied_beds,
            SUM(f.capacity_bed_count)::INT AS capacity_beds
     FROM dw.fact_bed_occupancy f
     JOIN dw.dim_date d ON d.date_key = f.date_key
+    JOIN dw.dim_ward w ON w.ward_key = f.ward_key
     CROSS JOIN latest l
     WHERE d.full_date = l.full_date
-    GROUP BY f.ward_key
+    GROUP BY w.ward_id
 ), admissions AS (
-    SELECT f.ward_key,
+    SELECT w.ward_id,
            SUM(f.admission_count)::INT AS admissions_in_window,
            AVG(f.length_of_stay_days)::NUMERIC(10,2) AS avg_length_of_stay_days
     FROM dw.fact_admission f
     JOIN dw.dim_date d ON d.date_key = f.admission_date_key
+    JOIN dw.dim_ward w ON w.ward_key = f.ward_key
     CROSS JOIN latest l
     WHERE d.full_date > l.full_date - (%s * INTERVAL '1 day')
       AND d.full_date <= l.full_date
-    GROUP BY f.ward_key
+    GROUP BY w.ward_id
 ), staffing AS (
-    SELECT ward_key, SUM(assignment_count)::INT AS staff_assignments
-    FROM dw.fact_staff_assignment
-    GROUP BY ward_key
+    SELECT w.ward_id, SUM(f.assignment_count)::INT AS staff_assignments
+    FROM dw.fact_staff_assignment f
+    JOIN dw.dim_ward w ON w.ward_key = f.ward_key
+    GROUP BY w.ward_id
 ), metrics AS (
+    -- One row per ward (durable ward_id), using the current SCD2 version for
+    -- descriptive columns; facts from every version roll up via ward_id.
     SELECT w.ward_key, w.ward_id, w.ward_name,
            COALESCE(o.occupied_beds, 0) AS occupied_beds,
            COALESCE(o.capacity_beds, 0) AS capacity_beds,
@@ -74,9 +87,10 @@ WITH latest AS (
            a.avg_length_of_stay_days,
            COALESCE(s.staff_assignments, 0) AS staff_assignments
     FROM dw.dim_ward w
-    LEFT JOIN occupancy o ON o.ward_key = w.ward_key
-    LEFT JOIN admissions a ON a.ward_key = w.ward_key
-    LEFT JOIN staffing s ON s.ward_key = w.ward_key
+    LEFT JOIN occupancy o ON o.ward_id = w.ward_id
+    LEFT JOIN admissions a ON a.ward_id = w.ward_id
+    LEFT JOIN staffing s ON s.ward_id = w.ward_id
+    WHERE w.is_current
 ), baselines AS (
     SELECT AVG(admissions_in_window)::NUMERIC AS avg_admissions,
            AVG(avg_length_of_stay_days)::NUMERIC AS avg_length_of_stay,

@@ -33,7 +33,7 @@ mismatch_pct = (
 )
 st.warning(
     f"{int(recon['mismatched_bills']):,}/{int(recon['total_bills']):,} hóa đơn "
-    f"({mismatch_pct:.1f}%) có tổng `billing_detail.amount` không khớp `billing.total_amount`. "
+    f"({mismatch_pct:.3f}%) có tổng `billing_detail.amount` không khớp `billing.total_amount`. "
     "Toàn bộ số liệu tổng/chi phí trên trang này dùng `fact_billing.total_amount` làm nguồn chính; "
     "`fact_billing_detail` chỉ dùng để xem cơ cấu theo loại khoản mục, không dùng để đối chiếu tổng.",
     icon=":material/warning:",

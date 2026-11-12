@@ -37,6 +37,11 @@ import psycopg  # noqa: E402
 
 dsn = os.getenv("DW_DSN")
 if not dsn:
+    try:
+        dsn = st.secrets.get("DW_DSN")
+    except FileNotFoundError:
+        dsn = None
+if not dsn:
     st.error(
         "Chưa đặt biến môi trường DW_DSN. Ví dụ: "
         "export DW_DSN='postgresql://postgres:MAT_KHAU@localhost:5432/healthcare_dw'",
